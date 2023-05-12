@@ -37,6 +37,7 @@ testfun <- function(sometext) {
 testfun(sometext = "this function does slightly more, but still not much")
 
 # more sophisticated function --------------------------------------------
+# function defined without unit default 
 my_age <- function(birthday, units) {
     difftime(Sys.time(), birthday, units = units)
 }
@@ -45,6 +46,7 @@ my_age(birthday = "1997-04-23", units = "days")
 
 my_age("1997-04-23", "days")
 
+# function defined with unit default 
 my_age <- function(birthday, units = "days") {
     difftime(Sys.time(), birthday, units = units)
 }
@@ -59,11 +61,92 @@ my_age("1997-04-23", "mins")
 
 # Task 1: write your own functions 
 ```{r}
+# read data frame -----------------------------------------------
 wildschwein <- read_delim("data/wildschwein_BE_2056.csv", ",")
+
+
+# write function to calc. eucl. distance ----------------------------
+euc_dist1 <- function(x, y){
+    steplength <- sqrt((lag(x, 2) - x)^2 + (lag(y, 2) - y)^2)
+    return(steplength)
+} 
+
+# Use function to calculate eucl. distance --------------------------
+wildschwein|>
+  mutate(
+    steplength = euc_dist1(E, N)
+  )
+  
+
+# write function to calculate all --------------------------------------
+euc_dist <- function(x, column_name_x, column_name_y){
+    (mutate(x,
+        nMinus2 = sqrt((lag(x[[column_name_x]], 2) - x[[column_name_x]])^2 + (lag(x[[column_name_y]], 2) - x[[column_name_y]])^2), # distance to pos -30 minutes
+        nMinus1 = sqrt((lag(x[[column_name_x]], 1) - x[[column_name_x]])^2 + (lag(x[[column_name_y]], 1) - x[[column_name_y]])^2), # distance to pos -15 minutes
+        nPlus1  = sqrt((x[[column_name_x]] - lead(x[[column_name_x]], 1))^2 + (x[[column_name_y]] - lead(x[[column_name_y]], 1))^2), # distance to pos +15 mintues
+        nPlus2  = sqrt((x[[column_name_x]] - lead(x[[column_name_x]], 2))^2 + (x[[column_name_y]] - lead(x[[column_name_y]], 2))^2) # distance to pos +30 minutes
+    ))
+} 
+
+
+# calculate euc. dist with writed function -----------------------------
+euc_dist(x = wildschwein, column_name_x = "E", column_name_y = "N")
+  
 ```
 
 # Task 2: prepare analysis
 ```{r}
+# filter dataset with to wildboars and between a specific timeframe
+wildboar2 <- wildschwein |>
+  filter(TierName %in% c("Rosa", "Sabi")) |>
+  filter(DatetimeUTC > as.POSIXct("2015-04-01 00:00:00", tz = "UTC")) |>
+   filter(DatetimeUTC > as.POSIXct("2015-04-14 23:59:59", tz = "UTC"))
+  
 
+# i see spatial overlap between the two animals, but becaue i don't have a temporal information, i do not know if they met
+wildboar2 |>
+  ggplot(aes(E, N, col = TierName)) +
+  geom_point(alpha = 0.2) +
+  coord_equal()
+```
+
+# Task 3: create join key 
+```{r}
+# create a new column to round datetimeUTC for wildboar ------------------
+wildboar2 <- wildboar2 |>
+  select(-TierID, -CollarID) |>
+  mutate(
+    Datetime_round = lubridate::round_date(DatetimeUTC, "15 minutes")
+    )
+
+# create two subsets with every animal ---------------------------------------
+rosa <- wildboar2 |>
+  filter(TierName == "Rosa")
+
+sabi <- wildboar2 |>
+  filter(TierName == "Sabi")
+
+
+# join the two animals -------------------------------------------------------
+rosa_sabi <- dplyr::inner_join(sabi, rosa, by = "Datetime_round", suffix = c("_sabi", "_rosa"))
+```
+
+# Task 4: Measuring distance at concurrent locations
+```{r}
+meet <- rosa_sabi |>
+  mutate(
+    distance = sqrt((E_sabi - E_rosa)^2 + (N_sabi - E_rosa)^2),
+    meet = distance < 100
+  ) |>
+  filter(meet)
+```
+
+# Task 5: Visualize data
+```{r}
+wildboar2 |>
+  ggplot(aes(E, N)) +
+  geom_point(alpha = 0.2) +
+  coord_equal() +
+  geom_point(data = meet, aes(E_sabi, N_sabi), col = "red")
 ```
 
